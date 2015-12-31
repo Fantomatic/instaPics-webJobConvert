@@ -11,27 +11,28 @@ using System.Web;
 using System.Drawing;
 using instaPicsWebJob.Model;
 using System.Net.Mail;
+using Microsoft.WindowsAzure.Storage.Queue;
 
 namespace instaPicsWebJob
 {
     public class Functions
     {
-        public static void ImageRequest([QueueTrigger("imgconvertqueue")] string guid,
+        public static void ImageRequest([QueueTrigger("imgconvertqueue")] string guidqueue,
            [Table("userimgtable")] CloudTable table,
            [Blob("imgblob")] CloudBlobContainer blobContainer,
            TextWriter logger)
         {
             IEnumerable<CloudBlockBlob> listblobs = blobContainer.ListBlobs().OfType<CloudBlockBlob>();
 
-            foreach(CloudBlockBlob blockBlob in listblobs)
+            foreach (CloudBlockBlob blockBlob in listblobs)
             {
-                if(blockBlob.Name == guid)
+                if(blockBlob.Name == guidqueue)
                 {
                     //chemin des images
-                    string filePathOriginal = Path.Combine(Path.GetTempPath(), guid);
-                    string filePathOriginalThumb = Path.Combine(Path.GetTempPath(), "thumb" + guid);
-                    string filePathBN = Path.Combine(Path.GetTempPath(), "BN" + guid);
-                    string filePathBNThumb = Path.Combine(Path.GetTempPath(), "BNThumb" + guid);
+                    string filePathOriginal = Path.Combine(Path.GetTempPath(), guidqueue);
+                    string filePathOriginalThumb = Path.Combine(Path.GetTempPath(), "thumb" + guidqueue);
+                    string filePathBN = Path.Combine(Path.GetTempPath(), "BN" + guidqueue);
+                    string filePathBNThumb = Path.Combine(Path.GetTempPath(), "BNThumb" + guidqueue);
 
                     //téléchargement de l'image pour pouvoir la réutiliser
                     using (var fileStream = File.OpenWrite(filePathOriginal))
@@ -47,24 +48,24 @@ namespace instaPicsWebJob
                     Image originalThumb = ImgProcessing.GetThumbnail(filePathOriginal);
                     originalThumb.Save(filePathOriginalThumb);
 
-                    Image BNThumb = ImgProcessing.GetThumbnail(filePathOriginalThumb);
+                    Bitmap BNThumb = ImgProcessing.SetGrayscale(filePathOriginalThumb);
                     BNThumb.Save(filePathBNThumb);
 
                     //enregistrement dans les blobs
-                    CloudBlockBlob blobBnImg = blobContainer.GetBlockBlobReference("BN" + guid);
-                    blockBlob.UploadFromFile(filePathBN, FileMode.Open);
+                    CloudBlockBlob blobBnImg = blobContainer.GetBlockBlobReference("BN" + guidqueue);
+                    blobBnImg.UploadFromFile(filePathBN, FileMode.Open);
 
-                    logger.WriteLine("Enregistrement dans le blobcontainer du fichier BN"+ guid);
+                    logger.WriteLine("Enregistrement dans le blobcontainer du fichier BN"+ guidqueue);
 
-                    CloudBlockBlob blobThumbImg = blobContainer.GetBlockBlobReference("thumb" + guid);
-                    blockBlob.UploadFromFile(filePathOriginalThumb, FileMode.Open);
+                    CloudBlockBlob blobThumbImg = blobContainer.GetBlockBlobReference("thumb" + guidqueue);
+                    blobThumbImg.UploadFromFile(filePathOriginalThumb, FileMode.Open);
 
-                    logger.WriteLine("Enregistrement dans le blobcontainer du fichier thumb" + guid);
+                    logger.WriteLine("Enregistrement dans le blobcontainer du fichier thumb" + guidqueue);
 
-                    CloudBlockBlob blobBnThumbImg = blobContainer.GetBlockBlobReference("BNThumb" + guid);
-                    blockBlob.UploadFromFile(filePathBNThumb, FileMode.Open);
+                    CloudBlockBlob blobBnThumbImg = blobContainer.GetBlockBlobReference("BNThumb" + guidqueue);
+                    blobBnThumbImg.UploadFromFile(filePathBNThumb, FileMode.Open);
 
-                    logger.WriteLine("Enregistrement dans le blobcontainer du fichier BNThumb" + guid);
+                    logger.WriteLine("Enregistrement dans le blobcontainer du fichier BNThumb" + guidqueue);
 
 
                     //recherche de l'enregistrement dans la table qui correspond à l'image + mettre à jour l'enregistrement
@@ -72,17 +73,17 @@ namespace instaPicsWebJob
 
                     foreach (UserImageEntity entity in table.ExecuteQuery(query))
                     {
-                        if(entity.imgOriginal == guid)
+                        if(entity.imgOriginal == guidqueue)
                         {
-                            entity.imgBN = "BN" + guid;
-                            entity.imgBNThumb = "BNThumb" + guid;
-                            entity.imgOriginalThumb = "thumb" + guid;
+                            entity.imgBN = "BN" + guidqueue;
+                            entity.imgBNThumb = "BNThumb" + guidqueue;
+                            entity.imgOriginalThumb = "thumb" + guidqueue;
 
                             TableOperation updateOperation = TableOperation.Replace(entity);
 
                             table.Execute(updateOperation);
 
-                            logger.WriteLine("mise à jour de l'enregistrement dans la table correspondant à l'image " + guid);
+                            logger.WriteLine("mise à jour de l'enregistrement dans la table correspondant à l'image " + guidqueue);
                             break;
                         }
                     }
